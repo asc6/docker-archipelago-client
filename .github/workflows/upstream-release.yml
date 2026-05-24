@@ -1,0 +1,59 @@
+name: Build on upstream Archipelago release
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # daily at 02:00 UTC
+  workflow_dispatch:
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Get latest Archipelago release tag
+        id: get_release
+        run: |
+          TAG=$(curl -s https://api.github.com/repos/ArchipelagoMW/Archipelago/releases/latest | jq -r .tag_name)
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Check if image tag already exists on GHCR
+        id: check_tag
+        run: |
+          OWNER=${{ github.repository_owner }}
+          IMAGE=docker-archipelago-client
+          TAG=${{ steps.get_release.outputs.tag }}
+          TOKEN=${{ secrets.GITHUB_TOKEN }}
+          EXIST=$(curl -s -H "Authorization: Bearer $TOKEN" "https://ghcr.io/v2/$OWNER/$IMAGE/tags/list" | jq -r '.tags[]? | select(.=="'"$TAG"'")')
+          if [ -n "$EXIST" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set build metadata
+        id: meta
+        run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
+      - name: Build and push image for new release
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/docker-archipelago-client:${{ steps.get_release.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/docker-archipelago-client:latest
+          build-args: |
+            BUILD_DATE=${{ steps.meta.outputs.date }}
+            VERSION=${{ steps.get_release.outputs.tag }}
+            ARCHIPELAGO_RELEASE=${{ steps.get_release.outputs.tag }}
