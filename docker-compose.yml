@@ -9,3 +9,6 @@ services:
       - "38281:38281"
     volumes:
       - ./config:/config
+    environment:
+      - PUID=1000 # Match to your UID
+      - PGID=1000 # Match to your GID
