@@ -1,0 +1,11 @@
+services:
+  archipelago-client:
+    image: ghcr.io/asc6/docker-archipelago-client:latest
+    container_name: archipelago-client
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "8181:8181"
+      - "38281:38281"
+    volumes:
+      - ./config:/config
