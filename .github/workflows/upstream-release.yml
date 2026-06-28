@@ -1,8 +1,9 @@
 name: Build on upstream Archipelago release
 
 on:
-  schedule:
-    - cron: '0 2 * * *' # daily at 02:00 UTC
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -32,11 +33,25 @@ jobs:
           IMAGE=docker-archipelago-client
           TAG=${{ steps.get_release.outputs.tag }}
           TOKEN=${{ secrets.GITHUB_TOKEN }}
-          EXIST=$(curl -s -H "Authorization: Bearer $TOKEN" "https://ghcr.io/v2/$OWNER/$IMAGE/tags/list" | jq -r '.tags[]? | select(.=="'"$TAG"'")')
-          if [ -n "$EXIST" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+          
+          # Use GitHub API to check if the package version exists
+          RESPONSE=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $TOKEN" \
+            "https://api.github.com/users/$OWNER/packages/container/$IMAGE/versions")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            EXIST=$(echo "$BODY" | jq -r '.[] | select(.metadata.container.tags[]? == "'"$TAG"'") | .id' | head -n1)
+            if [ -n "$EXIST" ]; then
+              echo "exists=true" >> $GITHUB_OUTPUT
+              echo "Tag $TAG already exists"
+            else
+              echo "exists=false" >> $GITHUB_OUTPUT
+              echo "Tag $TAG is new, will build"
+            fi
           else
             echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Could not verify tag status (HTTP $HTTP_CODE), proceeding with build"
           fi
 
       - name: Set build metadata
