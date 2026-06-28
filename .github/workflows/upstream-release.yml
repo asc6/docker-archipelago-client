@@ -26,28 +26,34 @@ jobs:
           TAG=$(curl -s https://api.github.com/repos/ArchipelagoMW/Archipelago/releases/latest | jq -r .tag_name)
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
+      - name: Get short commit SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Check if image tag already exists on GHCR
         id: check_tag
         run: |
           OWNER=${{ github.repository_owner }}
           IMAGE=docker-archipelago-client
           TAG=${{ steps.get_release.outputs.tag }}
+          SHORT_SHA=${{ steps.sha.outputs.short }}
+          COMMIT_TAG="$TAG-$SHORT_SHA"
           TOKEN=${{ secrets.GITHUB_TOKEN }}
           
-          # Use GitHub API to check if the package version exists
+          # Use GitHub API to check if the commit-specific tag exists
           RESPONSE=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $TOKEN" \
             "https://api.github.com/users/$OWNER/packages/container/$IMAGE/versions")
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | head -n-1)
           
           if [ "$HTTP_CODE" = "200" ]; then
-            EXIST=$(echo "$BODY" | jq -r '.[] | select(.metadata.container.tags[]? == "'"$TAG"'") | .id' | head -n1)
+            EXIST=$(echo "$BODY" | jq -r '.[] | select(.metadata.container.tags[]? == "'"$COMMIT_TAG"'") | .id' | head -n1)
             if [ -n "$EXIST" ]; then
               echo "exists=true" >> $GITHUB_OUTPUT
-              echo "Tag $TAG already exists"
+              echo "Tag $COMMIT_TAG already exists"
             else
               echo "exists=false" >> $GITHUB_OUTPUT
-              echo "Tag $TAG is new, will build"
+              echo "Tag $COMMIT_TAG is new, will build"
             fi
           else
             echo "exists=false" >> $GITHUB_OUTPUT
@@ -73,6 +79,7 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
+            ghcr.io/${{ github.repository_owner }}/docker-archipelago-client:${{ steps.get_release.outputs.tag }}-${{ steps.sha.outputs.short }}
             ghcr.io/${{ github.repository_owner }}/docker-archipelago-client:${{ steps.get_release.outputs.tag }}
             ghcr.io/${{ github.repository_owner }}/docker-archipelago-client:latest
           build-args: |
